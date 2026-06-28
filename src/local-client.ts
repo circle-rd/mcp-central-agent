@@ -2,7 +2,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import {
+  ResourceListChangedNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { Resource, Tool } from "@modelcontextprotocol/sdk/types.js";
 
 // ── Endpoint config ────────────────────────────────────────────────────────
 
@@ -32,6 +36,9 @@ export type LocalClientStatus =
 export interface LocalClientCallbacks {
   onToolsChanged: (tools: Tool[]) => void;
   onStatusChanged: (status: LocalClientStatus, error?: string) => void;
+  onResourcesChanged: (resources: Resource[]) => void;
+  onResourceUpdated: (uri: string) => void;
+  onResourceListChanged: () => void;
 }
 
 // ── LocalClient ────────────────────────────────────────────────────────────
@@ -46,6 +53,7 @@ export class LocalClient {
   private _client: Client | null = null;
   private _status: LocalClientStatus = "disconnected";
   private _tools: Tool[] = [];
+  private _resources: Resource[] = [];
   private _destroyed = false;
   private _connecting = false;
   private _reconnectAttempt = 0;
@@ -64,6 +72,10 @@ export class LocalClient {
 
   get tools(): Tool[] {
     return this._tools;
+  }
+
+  get resources(): Resource[] {
+    return this._resources;
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -99,11 +111,31 @@ export class LocalClient {
       this._client = client;
       this._reconnectAttempt = 0;
 
+      // Wire MCP notifications BEFORE discovery so server-driven changes
+      // that race with the initial listResources are not dropped.
+      client.setNotificationHandler(
+        ResourceListChangedNotificationSchema,
+        async () => {
+          this._callbacks.onResourceListChanged();
+          await this._discoverResources();
+        },
+      );
+      client.setNotificationHandler(
+        ResourceUpdatedNotificationSchema,
+        async (notif) => {
+          this._callbacks.onResourceUpdated(notif.params.uri);
+        },
+      );
+
       // Discover tools
       const response = await client.listTools();
       this._tools = response.tools ?? [];
       this._setStatus("connected");
       this._callbacks.onToolsChanged(this._tools);
+
+      // Discover resources (capability is optional — many MCP servers do
+      // not implement it; treat MethodNotFound as "no resources exposed").
+      await this._discoverResources();
 
       // Watch for server-side drops.
       // onerror fires when the remote end closes the connection mid-session
@@ -161,6 +193,24 @@ export class LocalClient {
       arguments: args,
     });
     return result;
+  }
+
+  /**
+   * Read an MCP resource and return the SDK response verbatim.
+   *
+   * The caller (AgentTunnel) MUST forward the returned object byte-exact
+   * to Central as `resourceResult.result` — cache-backed resources (e.g.
+   * the firmware's `vandal://network/hosts`) encode an entire array inside
+   * `contents[0].text` as a JSON string, and any re-parsing here would
+   * break upstream consumers that rely on that shape.
+   */
+  async readResource(uri: string): Promise<unknown> {
+    if (!this._client) {
+      throw new Error(
+        `LocalClient for endpoint ${this.endpointId} is not connected`,
+      );
+    }
+    return await this._client.readResource({ uri });
   }
 
   async disconnect(): Promise<void> {
@@ -279,6 +329,35 @@ export class LocalClient {
   private _setStatus(status: LocalClientStatus, error?: string): void {
     this._status = status;
     this._callbacks.onStatusChanged(status, error);
+  }
+
+  /**
+   * Pull the resource list from the upstream MCP server and fan it out.
+   *
+   * Servers without the `resources` capability respond with a JSON-RPC
+   * `MethodNotFound` (-32601) error; we treat that as "no resources" and
+   * leave the cache empty without surfacing an error.
+   */
+  private async _discoverResources(): Promise<void> {
+    if (!this._client) return;
+    try {
+      const response = await this._client.listResources();
+      this._resources = response.resources ?? [];
+      this._callbacks.onResourcesChanged(this._resources);
+    } catch (err) {
+      const code = (err as { code?: number } | undefined)?.code;
+      if (code === -32601 || code === -32602) {
+        // Resources capability not supported by this server.
+        this._resources = [];
+        this._callbacks.onResourcesChanged(this._resources);
+        return;
+      }
+      console.warn(
+        `[LocalClient] ${this.config.name}: listResources failed \u2014 ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private _scheduleReconnect(): void {

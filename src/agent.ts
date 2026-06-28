@@ -21,6 +21,7 @@ export class McpCentralAgent {
       onEndpointUpdate: (endpoint) => this._updateEndpoint(endpoint),
       onEndpointRefresh: (endpointId) => this._refreshEndpoint(endpointId),
       onToolCall: (payload) => this._handleToolCall(payload),
+      onResourceRead: (payload) => this._handleResourceRead(payload),
     });
   }
 
@@ -86,6 +87,15 @@ export class McpCentralAgent {
       },
       onStatusChanged: (status, error) => {
         this._tunnel.sendStatusUpdate(endpoint.id, status, error);
+      },
+      onResourcesChanged: (resources) => {
+        this._tunnel.announceResources(endpoint.id, resources);
+      },
+      onResourceUpdated: (uri) => {
+        this._tunnel.notifyResourceUpdated(endpoint.id, uri);
+      },
+      onResourceListChanged: () => {
+        this._tunnel.notifyResourceListChanged(endpoint.id);
       },
     });
 
@@ -179,6 +189,42 @@ export class McpCentralAgent {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this._tunnel.sendToolError(callId, message);
+    }
+  }
+
+  // ── Resource read handling ────────────────────────────────
+
+  private async _handleResourceRead(payload: {
+    callId: string;
+    endpointId: string;
+    uri: string;
+  }): Promise<void> {
+    const { callId, endpointId, uri } = payload;
+    const client = this._clients.get(endpointId);
+
+    if (!client) {
+      this._tunnel.sendResourceError(
+        callId,
+        `No local client for endpoint ${endpointId}`,
+      );
+      return;
+    }
+
+    if (client.status !== "connected") {
+      this._tunnel.sendResourceError(
+        callId,
+        `Endpoint ${endpointId} is not connected (status: ${client.status})`,
+      );
+      return;
+    }
+
+    try {
+      // Forwarded verbatim — see LocalClient.readResource() rationale.
+      const result = await client.readResource(uri);
+      this._tunnel.sendResourceResult(callId, result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._tunnel.sendResourceError(callId, message);
     }
   }
 }
