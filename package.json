@@ -24,7 +24,7 @@
         "LICENSE"
     ],
     "scripts": {
-        "clean": "rm -rf dist",
+        "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
         "build": "tsc",
         "dev": "tsc -w",
         "start": "node dist/cli.js start",
