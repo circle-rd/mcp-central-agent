@@ -77,6 +77,7 @@ export class McpCentralAgent {
         this._endpoints.set(endpoint.id, endpoint);
 
         if (!endpoint.isEnabled) {
+            this._removeClient(endpoint.id);
             console.log(
                 `[McpCentralAgent] Endpoint '${endpoint.name}' is disabled — skipping`,
             );
