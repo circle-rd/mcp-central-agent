@@ -145,12 +145,14 @@ and removal/revisit condition. An exception not listed here is a violation.
 1. **Vitest test harness** (`vitest` in `tests/`, `vitest.config.ts`, `tsconfig.tests.json`).
    Reason: the tunnel protocol and configuration boundary need automated regression
    coverage. Risk: dev-only dependency. Mitigation: the harness is a gate (`npm test`,
-   `npm run typecheck:tests`). Rejected alternative: manual validation only.
+   `npm run typecheck:tests`). Rejected alternative: manual validation only. Revisit:
+   if Vitest is no longer maintained or the organisation standardises another test runner.
 2. **ESLint without a formatter** (`eslint`, `@eslint/js`, `typescript-eslint`,
    `eslint.config.js`). Reason: `package.json` already declared a `lint` script with no
    implementation; the doctrine requires static analysis. Risk: dev-only dependency.
    Mitigation: `npm run lint` is a gate; no formatting rules are introduced, so no
-   formatter is added. Rejected alternative: deleting the script.
+   formatter is added. Rejected alternative: deleting the script. Revisit: if the
+   organisation standardises another linter or a formatter becomes part of the baseline.
 3. **Remaining dev-only `minimatch` advisory** (transitive under `eslint` and
    `typescript-eslint`, moderate, not reachable from production code). Reason: no
    published parent resolves outside the vulnerable range yet; forcing a major through an
@@ -161,7 +163,8 @@ and removal/revisit condition. An exception not listed here is a violation.
 4. **Node engine >= 22** while `@modelcontextprotocol/sdk` allows >= 18. Reason: alignment
    with the MCP Central runtime baseline and Node 22 LTS support. Risk: users on Node 18/20
    must upgrade. Mitigation: `engines` and the README state the requirement explicitly.
-   Rejected alternative: supporting two runtimes with EOL versions.
+   Rejected alternative: supporting two runtimes with EOL versions. Revisit: when
+   Node 22 reaches end of life or the MCP Central runtime baseline moves.
 
 ## 9) Historical Context Sources
 
