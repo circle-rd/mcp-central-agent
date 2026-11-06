@@ -184,8 +184,11 @@ The public API also exposes the tunnel (`AgentTunnel`), the per-endpoint MCP cli
   by MCP Central).
 - **Live revocation** — deleting a tunnel disconnects the agent and rejects pending calls.
 - **Quotas** — `maxTunnelsPerAgent` / `maxEndpointsPerAgent` come from the auth-service plan.
-- **Validated boundary** — strict schemas reject malformed or unknown fields; connection
-  details come exclusively from MCP Central.
+- **Validated boundary** — strict schemas reject malformed payloads and unknown fields in
+  the config file and in every server event. The one exception is the endpoint row of
+  `endpoint_add` / `endpoint_update`: MCP Central sends its full database row, so only the
+  protocol fields are kept and every other column is stripped (not rejected) before the
+  strict schema runs. Connection details come exclusively from MCP Central.
 
 ---
 
