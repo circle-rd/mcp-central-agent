@@ -74,9 +74,7 @@ export class McpCentralAgent {
                 this._tunnel.sendStatusUpdate(endpoint.id, retained.status);
                 continue;
             }
-            const enabledEndpoint = { ...endpoint, isEnabled: true };
-            this._endpoints.set(endpointId, enabledEndpoint);
-            this._addEndpoint(enabledEndpoint);
+            this._addEndpoint(endpoint);
         }
     }
 

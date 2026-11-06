@@ -70,6 +70,28 @@ function tunnelCallbacks(): TunnelCallbacks {
     return mocks.callbacks;
 }
 
+describe("McpCentralAgent endpoint list", () => {
+    beforeEach(() => {
+        vi.spyOn(console, "log").mockImplementation(() => {});
+        mocks.callbacks = undefined;
+        mocks.clients.length = 0;
+        mocks.tunnel.sendStatusUpdate.mockClear();
+        new McpCentralAgent(CONFIG);
+    });
+
+    it("starts a client for each new enabled endpoint", () => {
+        tunnelCallbacks().onEndpoints([ENDPOINT]);
+
+        expect(mocks.clients).toHaveLength(1);
+    });
+
+    it("does not start a client for a disabled endpoint", () => {
+        tunnelCallbacks().onEndpoints([{ ...ENDPOINT, isEnabled: false }]);
+
+        expect(mocks.clients).toHaveLength(0);
+    });
+});
+
 describe("McpCentralAgent endpoint list after a tunnel reconnect", () => {
     beforeEach(() => {
         vi.spyOn(console, "log").mockImplementation(() => {});
