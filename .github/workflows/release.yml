@@ -20,21 +20,24 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+-*'   # pre-release tags: v1.0.0-beta.1
 
 permissions:
-  contents: write      # create GitHub release
-  packages: write      # publish to GitHub Packages
-  id-token: write      # provenance attestation (npm)
+  contents: read
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -47,7 +50,7 @@ jobs:
 
       # Save dist/ for subsequent publish jobs
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -57,28 +60,40 @@ jobs:
     name: Publish → npm
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write   # OIDC token for npm Trusted Publishing + provenance
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       # Restore the compiled output from the build job
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
 
-      # For OIDC trusted publishing, setup-node must NOT leave an _authToken
-      # entry in .npmrc (even an empty one causes "token expired" errors).
-      # We let setup-node configure the registry endpoint, then immediately
-      # delete the auth line it writes so npm falls through to the OIDC
-      # exchange driven by id-token:write + --provenance.
       - name: Setup Node.js (npm publish)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+
+      # setup-node writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
+      # into .npmrc. Even resolved to an empty value that entry blocks the OIDC
+      # exchange, so it is removed before publishing.
+      - name: Remove the setup-node token entry
+        run: |
+          npm config delete //registry.npmjs.org/:_authToken --location=user
+          if [ -f .npmrc ] && grep -q '_authToken' .npmrc; then
+            echo "::error::.npmrc still contains an _authToken entry; OIDC publishing would fail."
+            exit 1
+          fi
 
       # Stamp the version from the tag (strips the leading "v")
       - name: Set package version from tag
@@ -93,20 +108,26 @@ jobs:
     name: Publish → GitHub Packages
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write   # publish to GitHub Packages
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download dist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
 
       # GitHub Packages (npm) requires a scoped package name (@owner/pkg)
       - name: Setup Node.js (GitHub Packages registry)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           registry-url: 'https://npm.pkg.github.com'
@@ -114,7 +135,7 @@ jobs:
       - name: Set package name + version for GitHub Packages
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          npm pkg set name="@bitsdiver/mcp-central-agent"
+          npm pkg set name="@circle-rd/mcp-central-agent"
           npm pkg set version="$VERSION"
 
       - name: Publish to GitHub Packages
@@ -126,12 +147,16 @@ jobs:
     name: Create GitHub Release
     needs: [publish-npm, publish-gpr]
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write   # create the GitHub release
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history so we can diff the changelog
+          persist-credentials: false
 
       # Extract changelog section for this version (optional but nice)
       - name: Extract release notes
@@ -153,7 +178,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}

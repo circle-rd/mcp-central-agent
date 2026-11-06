@@ -1,0 +1,117 @@
+name: Nightly — npm (nightly)
+
+# Manual: run it from the branch to publish (develop, or main). The version
+# exists only in this workspace: nothing is committed back.
+#
+# Publishing uses npm Trusted Publishing (OIDC), so this workflow file must be
+# registered as a trusted publisher for the package:
+#   npmjs.com → package → Settings → Trusted Publishers → GitHub Actions
+#   → owner: circle-rd, repository: mcp-central-agent, workflow: nightly.yml
+# Without that registration `npm publish` fails with a 401/403: there is no
+# long-lived NPM_TOKEN in this repository.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality gates
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish nightly to npm
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # OIDC token for npm Trusted Publishing: no long-lived npm token is used.
+      id-token: write
+    steps:
+      - name: Only develop and main may be published
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/develop" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run this workflow from the develop or main branch, not '${GITHUB_REF}'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Trusted Publishing needs npm >= 11.5.1, which Node 24 ships.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # setup-node writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`
+      # into .npmrc. Even resolved to an empty value that entry breaks both the
+      # registry lookups below and the OIDC exchange, so it is removed first.
+      - name: Remove the setup-node token entry
+        run: |
+          npm config delete //registry.npmjs.org/:_authToken --location=project
+          if [ -f .npmrc ] && grep -q '_authToken' .npmrc; then
+            echo "::error::.npmrc still contains an _authToken entry; OIDC publishing would fail."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      # A nightly of an already released version would sort before it
+      # (0.1.0-nightly < 0.1.0): it is numbered after the next patch instead.
+      # The starting point is the highest of the checked-out version and the
+      # published `latest`, so a lagging branch never numbers below production.
+      # Re-running the same commit is a no-op instead of a failed publish.
+      - name: Compute the nightly version
+        id: version
+        run: |
+          set -euo pipefail
+          name=$(node -p "require('./package.json').name")
+          local_base=$(node -p "require('./package.json').version.split('-')[0]")
+          latest=$(npm view "${name}" version 2>/dev/null || true)
+          base="$local_base"
+          if [ -n "$latest" ]; then
+            base=$(node -e '
+              const local = process.argv[1].split(".").map(Number);
+              const remote = process.argv[2].split(".").map(Number);
+              const newer = remote[0] > local[0]
+                || (remote[0] === local[0] && remote[1] > local[1])
+                || (remote[0] === local[0] && remote[1] === local[1] && remote[2] > local[2]);
+              console.log((newer ? remote : local).join("."));
+            ' "$local_base" "$latest")
+          fi
+          if npm view "${name}@${base}" version >/dev/null 2>&1; then
+            base=$(node -e "const [a, b, c] = process.argv[1].split('.').map(Number); console.log([a, b, c + 1].join('.'))" "$base")
+          fi
+          nightly="${base}-nightly.$(date -u +%Y%m%d).g$(git rev-parse --short=7 HEAD)"
+
+          if npm view "${name}@${nightly}" version >/dev/null 2>&1; then
+            echo "::notice::${name}@${nightly} is already published; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "value=$nightly" >> "$GITHUB_OUTPUT"
+
+      - name: Set the nightly version
+        if: steps.version.outputs.skip != 'true'
+        run: npm version "${{ steps.version.outputs.value }}" --no-git-tag-version
+
+      - name: Build
+        if: steps.version.outputs.skip != 'true'
+        run: npm run build
+
+      - name: Publish with the nightly dist-tag
+        if: steps.version.outputs.skip != 'true'
+        run: npm publish --tag nightly --access public --provenance

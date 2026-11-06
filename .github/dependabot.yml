@@ -1,0 +1,36 @@
+# Dependabot reads this file from the default branch (main) only; PRs are opened on develop.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - dependabot
+    commit-message:
+      prefix: chore(deps)
+      include: scope
+    groups:
+      agent-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - dependabot
+    commit-message:
+      prefix: ci(deps)

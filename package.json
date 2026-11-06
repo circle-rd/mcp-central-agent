@@ -2,15 +2,15 @@
     "name": "mcp-central-agent",
     "version": "0.1.1",
     "description": "Local agent that tunnels private MCP servers to MCP Central",
-    "author": "BitsDiver",
+    "author": "circle-rd",
     "license": "MIT",
-    "homepage": "https://github.com/BitsDiver/mcp-central-agent#readme",
+    "homepage": "https://github.com/circle-rd/mcp-central-agent#readme",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/BitsDiver/mcp-central-agent.git"
+        "url": "git+https://github.com/circle-rd/mcp-central-agent.git"
     },
     "bugs": {
-        "url": "https://github.com/BitsDiver/mcp-central-agent/issues"
+        "url": "https://github.com/circle-rd/mcp-central-agent/issues"
     },
     "type": "module",
     "main": "./dist/index.js",
@@ -24,23 +24,31 @@
         "LICENSE"
     ],
     "scripts": {
+        "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
         "build": "tsc",
         "dev": "tsc -w",
         "start": "node dist/cli.js start",
-        "lint": "eslint src --ext .ts"
+        "typecheck": "tsc --noEmit",
+        "typecheck:tests": "tsc -p tsconfig.tests.json",
+        "test": "vitest run",
+        "lint": "eslint ."
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.10.0",
-        "commander": "^12.0.0",
-        "socket.io-client": "^4.8.0",
-        "zod": "^3.23.0"
+        "@modelcontextprotocol/sdk": "^1.32.2",
+        "commander": "^15.0.0",
+        "socket.io-client": "^4.8.4",
+        "zod": "^4.6.7"
     },
     "devDependencies": {
-        "@types/node": "^22.0.0",
-        "typescript": "^5.5.0"
+        "@eslint/js": "^10.0.1",
+        "@types/node": "^26.6.6",
+        "eslint": "^10.14.0",
+        "typescript": "~6.0.3",
+        "typescript-eslint": "^8.72.1",
+        "vitest": "^5.1.0"
     },
     "engines": {
-        "node": ">=18.0.0"
+        "node": ">=22.13.0"
     },
     "keywords": [
         "mcp",
