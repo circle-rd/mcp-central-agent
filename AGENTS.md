@@ -96,7 +96,7 @@ src/
 - `nightly.yml` is manual (`workflow_dispatch`) and only publishes from `develop` or `main`.
   It needs `nightly.yml` registered as an npm Trusted Publisher for the package; there is
   no long-lived npm token in this repository.
-- The release workflow (`.github/workflows/release.yml`) runs on `vX.Y.Z` tags only.
+- The release workflow (`.github/workflows/release.yml`) runs on semver tags, including prerelease tags (`vX.Y.Z-*`).
 - Do not modify CI/CD workflows unless the task and repository policy explicitly permit it.
 - Actions are pinned to their latest major tag; `actionlint` must pass on every workflow.
 
