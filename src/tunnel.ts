@@ -49,7 +49,6 @@ export interface TunnelCallbacks {
     onEndpointRefresh: (endpointId: string) => void;
     onToolCall: (payload: ToolCallPayload) => void;
     onResourceRead: (payload: ResourceReadPayload) => void;
-    onDisconnect: () => void;
 }
 
 // ── Schema helpers ───────────────────────────────────────────────────────
@@ -177,7 +176,6 @@ export class AgentTunnel {
 
         this._socket.on("disconnect", (reason) => {
             console.warn(`[AgentTunnel] Disconnected: ${reason}`);
-            this._callbacks.onDisconnect();
         });
 
         this._socket.on("connect_error", (err) => {

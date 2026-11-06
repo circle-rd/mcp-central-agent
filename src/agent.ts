@@ -29,7 +29,6 @@ export class McpCentralAgent {
                 this._refreshEndpoint(endpointId),
             onToolCall: (payload) => this._handleToolCall(payload),
             onResourceRead: (payload) => this._handleResourceRead(payload),
-            onDisconnect: () => this._markAllDisconnected(),
         });
     }
 
@@ -68,7 +67,13 @@ export class McpCentralAgent {
         for (const endpoint of endpoints) {
             this._endpoints.set(endpoint.id, endpoint);
             if (!endpoint.isEnabled) continue;
-            if (this._clients.has(endpoint.id)) continue;
+            const retained = this._clients.get(endpoint.id);
+            if (retained) {
+                // The local session outlives a tunnel reconnect, so Central
+                // must be told its real status once the socket has rejoined.
+                this._tunnel.sendStatusUpdate(endpoint.id, retained.status);
+                continue;
+            }
             const enabledEndpoint = { ...endpoint, isEnabled: true };
             this._endpoints.set(endpointId, enabledEndpoint);
             this._addEndpoint(enabledEndpoint);
@@ -165,12 +170,6 @@ export class McpCentralAgent {
         this._removeClient(endpointId);
         if (endpoint) {
             this._addEndpoint(endpoint);
-        }
-    }
-
-    private _markAllDisconnected(): void {
-        for (const endpointId of this._clients.keys()) {
-            this._tunnel.sendStatusUpdate(endpointId, "disconnected");
         }
     }
 
