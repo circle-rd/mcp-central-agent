@@ -69,7 +69,9 @@ export class McpCentralAgent {
             this._endpoints.set(endpoint.id, endpoint);
             if (!endpoint.isEnabled) continue;
             if (this._clients.has(endpoint.id)) continue;
-            this._addEndpoint(endpoint);
+            const enabledEndpoint = { ...endpoint, isEnabled: true };
+            this._endpoints.set(endpointId, enabledEndpoint);
+            this._addEndpoint(enabledEndpoint);
         }
     }
 
