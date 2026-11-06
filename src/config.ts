@@ -42,7 +42,7 @@ export async function loadConfig(filePath?: string): Promise<AgentConfig> {
     try {
         json = JSON.parse(raw);
     } catch (err) {
-        throw new Error(`Invalid JSON in ${configPath}`, { cause: err });
+        throw new Error(`Invalid JSON in ${configPath}: ${String(err)}`, { cause: err });
     }
 
     const result = AgentConfigSchema.safeParse(json);
