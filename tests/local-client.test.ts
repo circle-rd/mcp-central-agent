@@ -101,12 +101,22 @@ function makeClient() {
 }
 
 describe("LocalClient lifecycle", () => {
-    let transport: ReturnType<typeof createFakeTransport>;
+    let transports: ReturnType<typeof createFakeTransport>[];
+
+    function transportAt(index: number): ReturnType<typeof createFakeTransport> {
+        const transport = transports[index];
+        if (!transport) throw new Error(`transport ${index} was never created`);
+        return transport;
+    }
 
     beforeEach(() => {
         vi.useFakeTimers();
-        transport = createFakeTransport();
-        sdk.createTransport = () => transport;
+        transports = [];
+        sdk.createTransport = () => {
+            const transport = createFakeTransport();
+            transports.push(transport);
+            return transport;
+        };
         sdk.behavior.listTools = () =>
             Promise.resolve({ tools: [{ name: "ping", inputSchema: {} }] });
         sdk.behavior.listResources = () => Promise.resolve({ resources: [] });
@@ -132,13 +142,18 @@ describe("LocalClient lifecycle", () => {
     it("reconnects after a transport drop", async () => {
         const { client, statuses } = makeClient();
         await client.connect();
+        expect(transports).toHaveLength(1);
 
-        transport.drop(new Error("connection reset"));
+        transportAt(0).drop(new Error("connection reset"));
         expect(client.status).toBe("error");
 
         await vi.advanceTimersByTimeAsync(1_000);
+        expect(transports).toHaveLength(2);
         expect(client.status).toBe("connected");
         expect(statuses.filter((s) => s.status === "connected")).toHaveLength(2);
+
+        transportAt(0).drop(new Error("late error from the dropped transport"));
+        expect(client.status).toBe("connected");
         await client.disconnect();
     });
 
@@ -147,7 +162,7 @@ describe("LocalClient lifecycle", () => {
         await client.connect();
         await client.disconnect();
 
-        transport.drop(new Error("late error"));
+        transportAt(0).drop(new Error("late error"));
         await vi.advanceTimersByTimeAsync(60_000);
 
         expect(statuses.filter((s) => s.status === "error")).toHaveLength(0);
