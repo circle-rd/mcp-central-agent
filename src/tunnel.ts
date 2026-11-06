@@ -187,11 +187,16 @@ export class AgentTunnel {
         // ── Server → Agent events (tunnel:* prefix) ─────────────────────────
 
         this._socket.on("tunnel:endpoints", (payload: unknown) => {
-            const endpoints = parseEvent(
-                z.array(EndpointConfigSchema),
-                "tunnel:endpoints",
-                payload,
-            );
+            let endpoints: EndpointPayload[];
+            try {
+                endpoints = parseEvent(
+                    z.array(EndpointConfigSchema),
+                    "tunnel:endpoints",
+                    payload,
+                );
+            } catch {
+                return;
+            }
             console.log(`[AgentTunnel] Received ${endpoints.length} endpoints`);
             this._callbacks.onEndpoints(endpoints);
         });
