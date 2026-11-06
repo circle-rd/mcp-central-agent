@@ -101,6 +101,7 @@ export class LocalClient {
             await this._discoverResources(session);
 
             this._hookTransportClose(session.transport);
+            if (this._destroyed || this._session !== session) return;
             this._setStatus("connected");
             this._callbacks.onToolsChanged(this._tools);
         } catch (err) {
