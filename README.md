@@ -119,7 +119,7 @@ endpoints to the tunnel from the UI — no restart required.
 
 The file is read as a strict JSON object: unknown fields, a non-URL `serverUrl` or a key
 that does not start with `tunnel_` are rejected with a message naming the faulty field.
-It contains a secret and is listed in `.gitignore` — never commit it.
+Add `mcp-agent.json` to your project's `.gitignore`; it contains a secret and must not be committed.
 
 ---
 
