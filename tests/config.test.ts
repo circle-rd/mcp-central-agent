@@ -86,7 +86,12 @@ describe("loadConfig", () => {
         await withConfigFile(
             JSON.stringify({ ...VALID, apiKey: "nope" }),
             async (path) => {
-                await expect(loadConfig(path)).rejects.toThrow(/Invalid config/);
+                await expect(loadConfig(path)).rejects.toThrow(
+                    /Invalid config[\s\S]*• apiKey: apiKey is too short/,
+                );
+                await expect(loadConfig(path)).rejects.toThrow(
+                    /• apiKey: apiKey must start with 'tunnel_'/,
+                );
             },
         );
     });
