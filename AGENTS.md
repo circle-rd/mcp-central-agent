@@ -57,6 +57,9 @@ Canonical manifests/build descriptors:
 - `tsconfig.tests.json`
 - `vitest.config.ts`
 - `eslint.config.js`
+- `.github/dependabot.yml`
+- `.github/workflows/ci.yml`
+- `.github/workflows/nightly.yml`
 - `.github/workflows/release.yml`
 
 The public API (`src/index.ts`) and its runtime schemas are compatibility surface: changing
@@ -88,8 +91,14 @@ src/
 - Production branch: `main`.
 - Prefer pull requests over direct pushes.
 - Never force-push or bypass protected-branch/ruleset checks.
+- `ci.yml` runs on every pull request and on pushes to `main` / `develop`, and is reused
+  by `nightly.yml` through `workflow_call` so a nightly can never ship unvalidated code.
+- `nightly.yml` is manual (`workflow_dispatch`) and only publishes from `develop` or `main`.
+  It needs `nightly.yml` registered as an npm Trusted Publisher for the package; there is
+  no long-lived npm token in this repository.
 - The release workflow (`.github/workflows/release.yml`) runs on `vX.Y.Z` tags only.
 - Do not modify CI/CD workflows unless the task and repository policy explicitly permit it.
+- Actions are pinned to their latest major tag; `actionlint` must pass on every workflow.
 
 ## 6) Quality Gates
 
@@ -102,6 +111,9 @@ Before considering a code change complete, run every gate applicable to the chan
 - `npm test`
 - `npm run build`
 - `npm audit --omit=dev --audit-level=moderate`
+
+The same commands are what `.github/workflows/ci.yml` runs: CI is the reference for the
+gate set, so a local command that CI does not run is not a gate.
 
 A missing toolchain or unclear gate is an onboarding/task blocker, not permission to weaken or skip validation.
 

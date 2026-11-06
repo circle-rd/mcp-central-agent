@@ -206,6 +206,21 @@ Contributions follow the repository contract in [`AGENTS.md`](AGENTS.md), which 
 the doctrine of [`mcp-central/AGENTS.md`](https://github.com/circle-rd/mcp-central/blob/develop/AGENTS.md).
 Work happens on `develop`; `main` is the production branch.
 
+### Continuous integration
+
+`ci.yml` runs on every pull request and on pushes to `main` / `develop`:
+
+- type-check (sources and tests), lint, unit tests and build on Node 22 and Node 24;
+- `npm audit --omit=dev --audit-level=moderate` on the production dependency tree.
+
+`nightly.yml` is triggered manually from `develop` or `main`. It reuses `ci.yml` as its
+quality gate, then publishes `<next-version>-nightly.<YYYYMMDD>.g<sha>` under the
+`nightly` npm dist-tag. Re-running the same commit is a no-op.
+
+Both publishing workflows use **npm Trusted Publishing (OIDC)** — no long-lived npm token
+is stored — so each workflow file must be registered as a Trusted Publisher for the
+package on npmjs.com (`release.yml` for releases, `nightly.yml` for nightlies).
+
 ### Releasing
 
 The release workflow (`release.yml`) builds and publishes to npm and GitHub Packages when
