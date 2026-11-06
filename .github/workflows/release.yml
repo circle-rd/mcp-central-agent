@@ -89,7 +89,7 @@ jobs:
       # exchange, so it is removed before publishing.
       - name: Remove the setup-node token entry
         run: |
-          npm config delete //registry.npmjs.org/:_authToken --location=project
+          npm config delete //registry.npmjs.org/:_authToken --location=user
           if [ -f .npmrc ] && grep -q '_authToken' .npmrc; then
             echo "::error::.npmrc still contains an _authToken entry; OIDC publishing would fail."
             exit 1
