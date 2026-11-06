@@ -57,16 +57,22 @@ export interface TunnelCallbacks {
  * Parses an untrusted Socket.IO payload.
  *
  * A malformed server push is a protocol violation, not a recoverable state:
- * report it on stderr and drop the event instead of feeding an unvalidated
- * shape to the agent.
+ * report it on stderr and return `undefined` so the caller drops the event
+ * instead of feeding an unvalidated shape to the agent. Only validation
+ * failures are handled here; exceptions raised later by the callbacks are
+ * application errors and are left to propagate.
  */
-function parseEvent<T>(schema: z.ZodType<T>, event: string, data: unknown): T {
+function parseEvent<T>(
+    schema: z.ZodType<T>,
+    event: string,
+    data: unknown,
+): T | undefined {
     const result = schema.safeParse(data);
     if (!result.success) {
         console.error(
             `[AgentTunnel] Ignoring malformed '${event}' payload: ${z.prettifyError(result.error)}`,
         );
-        throw new Error(`Malformed '${event}' payload`);
+        return undefined;
     }
     return result.data;
 }
@@ -185,16 +191,12 @@ export class AgentTunnel {
         // ── Server → Agent events (tunnel:* prefix) ─────────────────────────
 
         this._socket.on("tunnel:endpoints", (payload: unknown) => {
-            let endpoints: EndpointPayload[];
-            try {
-                endpoints = parseEvent(
-                    z.array(EndpointConfigSchema),
-                    "tunnel:endpoints",
-                    payload,
-                );
-            } catch {
-                return;
-            }
+            const endpoints = parseEvent(
+                z.array(EndpointConfigSchema),
+                "tunnel:endpoints",
+                payload,
+            );
+            if (!endpoints) return;
             console.log(`[AgentTunnel] Received ${endpoints.length} endpoints`);
             this._callbacks.onEndpoints(endpoints);
         });
@@ -203,96 +205,77 @@ export class AgentTunnel {
         // event envelopes are normalized to the protocol fields before the
         // strict endpoint schema validates them.
         this._socket.on("tunnel:endpoint_add", (payload: unknown) => {
-            try {
-                const { endpoint } = parseEvent(
-                    EndpointPushEventSchema,
-                    "tunnel:endpoint_add",
-                    payload,
-                );
-                console.log(`[AgentTunnel] Endpoint added: ${endpoint.name}`);
-                this._callbacks.onEndpointAdd(endpoint);
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const event = parseEvent(
+                EndpointPushEventSchema,
+                "tunnel:endpoint_add",
+                payload,
+            );
+            if (!event) return;
+            console.log(`[AgentTunnel] Endpoint added: ${event.endpoint.name}`);
+            this._callbacks.onEndpointAdd(event.endpoint);
         });
 
         this._socket.on("tunnel:endpoint_remove", (payload: unknown) => {
-            try {
-                const { endpointId } = parseEvent(
-                    EndpointRemoveEventSchema,
-                    "tunnel:endpoint_remove",
-                    payload,
-                );
-                console.log(`[AgentTunnel] Endpoint removed: ${endpointId}`);
-                this._callbacks.onEndpointRemove(endpointId);
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const event = parseEvent(
+                EndpointRemoveEventSchema,
+                "tunnel:endpoint_remove",
+                payload,
+            );
+            if (!event) return;
+            console.log(`[AgentTunnel] Endpoint removed: ${event.endpointId}`);
+            this._callbacks.onEndpointRemove(event.endpointId);
         });
 
         this._socket.on("tunnel:endpoint_toggle", (payload: unknown) => {
-            try {
-                const { endpointId, isEnabled } = parseEvent(
-                    EndpointToggleEventSchema,
-                    "tunnel:endpoint_toggle",
-                    payload,
-                );
-                this._callbacks.onEndpointToggle(endpointId, isEnabled);
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const event = parseEvent(
+                EndpointToggleEventSchema,
+                "tunnel:endpoint_toggle",
+                payload,
+            );
+            if (!event) return;
+            this._callbacks.onEndpointToggle(event.endpointId, event.isEnabled);
         });
 
         this._socket.on("tunnel:endpoint_update", (payload: unknown) => {
-            try {
-                const { endpoint } = parseEvent(
-                    EndpointPushEventSchema,
-                    "tunnel:endpoint_update",
-                    payload,
-                );
-                console.log(`[AgentTunnel] Endpoint updated: ${endpoint.name}`);
-                this._callbacks.onEndpointUpdate(endpoint);
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const event = parseEvent(
+                EndpointPushEventSchema,
+                "tunnel:endpoint_update",
+                payload,
+            );
+            if (!event) return;
+            console.log(`[AgentTunnel] Endpoint updated: ${event.endpoint.name}`);
+            this._callbacks.onEndpointUpdate(event.endpoint);
         });
 
         this._socket.on("tunnel:endpoint_refresh", (payload: unknown) => {
-            try {
-                const { endpointId } = parseEvent(
-                    EndpointRefreshEventSchema,
-                    "tunnel:endpoint_refresh",
-                    payload,
-                );
-                console.log(`[AgentTunnel] Endpoint refresh: ${endpointId}`);
-                this._callbacks.onEndpointRefresh(endpointId);
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const event = parseEvent(
+                EndpointRefreshEventSchema,
+                "tunnel:endpoint_refresh",
+                payload,
+            );
+            if (!event) return;
+            console.log(`[AgentTunnel] Endpoint refresh: ${event.endpointId}`);
+            this._callbacks.onEndpointRefresh(event.endpointId);
         });
 
         this._socket.on("tunnel:tool_call", (payload: unknown) => {
-            try {
-                this._callbacks.onToolCall(
-                    parseEvent(ToolCallPayloadSchema, "tunnel:tool_call", payload),
-                );
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const call = parseEvent(
+                ToolCallPayloadSchema,
+                "tunnel:tool_call",
+                payload,
+            );
+            if (!call) return;
+            this._callbacks.onToolCall(call);
         });
 
         this._socket.on("tunnel:resource_read", (payload: unknown) => {
-            try {
-                this._callbacks.onResourceRead(
-                    parseEvent(
-                        ResourceReadPayloadSchema,
-                        "tunnel:resource_read",
-                        payload,
-                    ),
-                );
-            } catch {
-                // Already reported by parseEvent.
-            }
+            const read = parseEvent(
+                ResourceReadPayloadSchema,
+                "tunnel:resource_read",
+                payload,
+            );
+            if (!read) return;
+            this._callbacks.onResourceRead(read);
         });
     }
 
