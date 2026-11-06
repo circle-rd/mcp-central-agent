@@ -9,6 +9,9 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+coverage/
 
 # Runtime config (contains secrets — never commit)
 mcp-agent.json

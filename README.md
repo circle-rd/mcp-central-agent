@@ -1,86 +1,231 @@
-# mcp-central-agent
+<p align="center">
+  <em>Reach the MCP servers that live on your machine — through MCP Central, without opening a port.</em>
+</p>
 
-A local agent that bridges private MCP servers (stdio processes, localhost URLs) running on your machine to [MCP Central](https://github.com/BitsDiver/mcp-central) via an outbound tunnel.
+<h1 align="center">mcp-central-agent</h1>
 
-## Overview
+<p align="center">
+  <a href="https://nodejs.org/"><img alt="Node.js 22" src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?logo=node.js&logoColor=white"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript 6" src="https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white"></a>
+  <a href="https://modelcontextprotocol.io/"><img alt="MCP" src="https://img.shields.io/badge/MCP-sdk_v1-8B5CF6"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+</p>
 
-MCP Central is a cloud-hosted MCP proxy, but some MCP servers run locally:
+`mcp-central-agent` is the companion CLI of
+**[MCP Central](https://github.com/circle-rd/mcp-central)** — the authenticated MCP
+proxy that aggregates every MCP server behind a single `/mcp` endpoint.
 
-- `stdio` processes (e.g. `npx @modelcontextprotocol/server-github`)
-- HTTP servers on `localhost` / `192.168.x.x` / `*.local`
+It runs on the machine that hosts private MCP servers (`stdio` processes, `localhost`
+HTTP/SSE servers, LAN addresses) and dials **out** to MCP Central. To your MCP clients,
+a tunnelled server is indistinguishable from a directly registered one: same
+namespaced tools, same endpoint, same authentication.
 
-**mcp-central-agent** solves this by:
+```mermaid
+flowchart LR
+    CLIENT[MCP client<br/>VS Code · Cursor · Claude]
+    CENTRAL[MCP Central<br/>proxy · auth · quotas]
 
-1. Running on your machine as a lightweight Node.js process
-2. Connecting outbound to MCP Central via Socket.IO (no port forwarding needed)
-3. Forwarding tool calls to your local MCP servers and returning results
+    subgraph PRIVATE["Private network — firewall stays closed"]
+        AGENT[mcp-central-agent<br/>outbound Socket.IO]
+        STDIO[stdio MCP server]
+        LOCAL[localhost / SSE / HTTP MCP server]
+    end
+
+    CLIENT -->|"/mcp — API key"| CENTRAL
+    AGENT -->|"outbound tunnel — tunnel key"| CENTRAL
+    AGENT --> STDIO
+    AGENT --> LOCAL
+```
+
+---
+
+## Features
+
+- **Outbound-only tunnel** — one authenticated Socket.IO connection to
+  `{serverUrl}/tunnel`. No inbound port, no VPN, no public DNS, no port forwarding.
+- **Live endpoint management** — endpoints are pushed from the MCP Central UI
+  (add / update / remove / enable / disable / refresh); the agent starts and stops local
+  MCP clients accordingly, without restart.
+- **Three transports** — `stdio` (spawns a local process), `streamable-http`
+  (POST, with automatic SSE fallback), and `sse`.
+- **Tools and resources** — tool discovery and invocation, resource listing, resource
+  reads, and forwarding of `notifications/resources/*` changes back to Central.
+- **Resilient** — unlimited tunnel reconnection (1 s → 30 s back-off) and per-endpoint
+  reconnect (1 s, 2 s, 5 s, 10 s, 30 s), with connection status reported live to Central.
+- **Validated at the boundary** — the configuration file and every payload received over
+  the tunnel are validated with [Zod](https://zod.dev/) before use.
+- **Programmable** — the package also exports `McpCentralAgent`, `AgentTunnel`,
+  `LocalClient` and `loadConfig` for embedding in your own tooling.
+
+---
+
+## Requirements
+
+- **Node.js >= 22**
+- An MCP Central instance (self-hosted) and a **tunnel** created in its UI.
+
+---
 
 ## Quick Start
 
-### 1. Create a Local Agent in MCP Central
+### 1. Create a tunnel in MCP Central
 
-Go to **Endpoints** → **Add Local Agent**, enter a name, and copy the generated API key.
+Open **MCP Servers → Add Local Tunnel**, give it a name, and copy the generated
+`tunnel_...` key — it is shown **once**.
 
-### 2. Initialize Config
+### 2. Initialize the agent on the private machine
 
 ```bash
 npx mcp-central-agent init
 ```
 
-Answer the prompts:
+The prompts validate each answer as you type:
 
-- **Server URL**: `https://your-mcp-central.example.com`
-- **Agent name**: `My Laptop`
-- **API key**: `agent_xxxxxxxxxx...` (from step 1)
+- **Server URL** — e.g. `https://your-mcp-central.example.com`
+- **Tunnel name** — must match the tunnel created in step 1
+- **Tunnel key** — `tunnel_xxxxxxxx…`
 
-This creates `mcp-agent.json` in the current directory.
+A `mcp-agent.json` file is written in the current directory.
 
-### 3. Start the Agent
+### 3. Start the agent
 
 ```bash
 npx mcp-central-agent start
 ```
 
-The agent connects to MCP Central and receives the list of endpoints assigned to it. It starts each local MCP server and announces its tools to MCP Central.
+The agent connects to MCP Central, receives the endpoints assigned to its tunnel,
+starts each local MCP server and announces their tools and resources. Assign
+endpoints to the tunnel from the UI — no restart required.
+
+---
 
 ## Configuration File
 
-`mcp-agent.json`:
+`mcp-agent.json` (default path; override with `--config`):
 
 ```json
 {
   "serverUrl": "https://your-mcp-central.example.com",
   "agentName": "My Laptop",
-  "apiKey": "agent_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  "apiKey": "tunnel_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
 
-| Field       | Description                                            |
-| ----------- | ------------------------------------------------------ |
-| `serverUrl` | Base URL of your MCP Central server                    |
-| `agentName` | Must match the agent name created in the UI            |
-| `apiKey`    | Secret key generated by MCP Central (never share this) |
+| Field       | Description                                                     |
+| ----------- | --------------------------------------------------------------- |
+| `serverUrl` | Base URL of your MCP Central instance                           |
+| `agentName` | Tunnel name, as created in MCP Central                          |
+| `apiKey`    | Tunnel key generated by MCP Central (secret — never share it)   |
 
-Endpoints are managed from the MCP Central UI — the agent receives them automatically when it connects.
+The file is read as a strict JSON object: unknown fields, a non-URL `serverUrl` or a key
+that does not start with `tunnel_` are rejected with a message naming the faulty field.
+It contains a secret and is listed in `.gitignore` — never commit it.
+
+---
 
 ## Supported Transports
 
-| Transport         | Description                                                         |
-| ----------------- | ------------------------------------------------------------------- |
-| `stdio`           | Spawns a local process (e.g. `npx @modelcontextprotocol/server-fs`) |
-| `streamable-http` | Connects to a local HTTP MCP server                                 |
-| `sse`             | Connects to a local SSE MCP server                                  |
+| Transport         | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `stdio`           | Spawns a local process (e.g. `npx @modelcontextprotocol/server-filesystem`)   |
+| `streamable-http` | Connects to a local Streamable HTTP MCP server; falls back to SSE on failure |
+| `sse`             | Connects to a local SSE MCP server                                           |
+
+The transport and connection details of each endpoint are configured in MCP Central, not
+in the agent configuration file. `stdio` servers are spawned with the local user's
+environment plus the variables configured for the endpoint server-side (which take
+precedence).
+
+---
 
 ## CLI Reference
 
 ```
-mcp-central-agent init [--output <path>]   Create config file interactively
+mcp-central-agent init [--output <path>]   Create a config file interactively
 mcp-central-agent start [--config <path>]  Start the agent
+mcp-central-agent --version                Print the agent version
 ```
+
+| Option                 | Command | Description                               |
+| ---------------------- | ------- | ----------------------------------------- |
+| `-o, --output <path>`  | `init`  | Output file path (default `mcp-agent.json`) |
+| `-c, --config <path>`  | `start` | Config file path (default `mcp-agent.json`) |
+
+`SIGINT` / `SIGTERM` shut the agent down gracefully: local MCP servers are closed and the
+tunnel is disconnected.
+
+---
+
+## Programmatic Use
+
+```ts
+import { McpCentralAgent, loadConfig } from "mcp-central-agent";
+
+const config = await loadConfig("./mcp-agent.json");
+const agent = new McpCentralAgent(config);
+agent.start();
+
+process.on("SIGTERM", () => void agent.stop());
+```
+
+The public API also exposes the tunnel (`AgentTunnel`), the per-endpoint MCP client
+(`LocalClient`), the configuration and protocol schemas (`AgentConfigSchema`,
+`EndpointConfigSchema`, `ToolCallPayloadSchema`, `ResourceReadPayloadSchema`) and
+`AGENT_VERSION`. Exports are a compatibility surface: breaking one requires a version bump.
+
+---
 
 ## Security
 
-- The API key is a unique secret per agent. Keep it private.
-- Traffic is outbound only — no inbound ports needed.
-- IP whitelisting is configurable in MCP Central.
-- The key is stored as a SHA-256 hash in the database; MCP Central never sees or stores the plain-text key after creation.
+- **Outbound only** — the agent dials out; nothing listens on the private network.
+- **Per-tunnel key** — stored as a SHA-256 hash by MCP Central and never shown again
+  after creation. It is a secret: keep it out of logs and source control.
+- **Optional IP allow-list** — restrict which source IP may open the tunnel (enforced
+  by MCP Central).
+- **Live revocation** — deleting a tunnel disconnects the agent and rejects pending calls.
+- **Quotas** — `maxTunnelsPerAgent` / `maxEndpointsPerAgent` come from the auth-service plan.
+- **Validated boundary** — strict schemas reject malformed or unknown fields; connection
+  details come exclusively from MCP Central.
+
+---
+
+## Development
+
+```bash
+npm ci                  # install (single package manager: npm)
+npm run typecheck       # tsc --noEmit
+npm run typecheck:tests
+npm run lint            # ESLint (flat config, typescript-eslint)
+npm test                # Vitest
+npm run build           # tsc → dist/
+npm run dev             # tsc --watch
+npm audit --omit=dev --audit-level=moderate
+```
+
+Contributions follow the repository contract in [`AGENTS.md`](AGENTS.md), which mirrors
+the doctrine of [`mcp-central/AGENTS.md`](https://github.com/circle-rd/mcp-central/blob/develop/AGENTS.md).
+Work happens on `develop`; `main` is the production branch.
+
+### Releasing
+
+The release workflow (`release.yml`) builds and publishes to npm and GitHub Packages when
+a semver tag is pushed, then creates the GitHub release:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+---
+
+## Related Projects
+
+| Project                                                 | Description                                                                       |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [mcp-central](https://github.com/circle-rd/mcp-central) | The proxy: Node.js + IOServer (Fastify + Socket.IO), PostgreSQL, Redis, Vue 3 SPA |
+
+---
+
+## License
+
+MIT — © CIRCLE Cyber. See [LICENSE](LICENSE).

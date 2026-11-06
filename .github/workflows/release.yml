@@ -114,7 +114,7 @@ jobs:
       - name: Set package name + version for GitHub Packages
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          npm pkg set name="@bitsdiver/mcp-central-agent"
+          npm pkg set name="@circle-rd/mcp-central-agent"
           npm pkg set version="$VERSION"
 
       - name: Publish to GitHub Packages
