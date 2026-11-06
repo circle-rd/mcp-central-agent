@@ -98,7 +98,7 @@ export class LocalClient {
 
             // Discover resources (capability is optional — many MCP servers do
             // not implement it; treat MethodNotFound as "no resources exposed").
-            await this._discoverResources(session);
+            void this._discoverResources(session);
 
             this._hookTransportClose(session.transport);
             if (this._destroyed || this._session !== session) return;
